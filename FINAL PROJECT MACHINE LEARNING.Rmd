@@ -1,0 +1,136 @@
+---
+title: "COURSE PROJECT - PRACTICAL MACHINE LEARNING"
+author: "David Romero"
+date: "3/30/2021"
+output: html_document
+---
+
+# INTRODUCTION
+
+This is the final report of Coursera´s Practical Machine Learning course, as part of the Data Science Specialization track by Jhon Hopkins.
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+## Data Loading and Processing
+
+```{r, cache=TRUE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+trainUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "/Users/davidromerotorres/Dropbox (Personal)/CIENCIA DE DATOS/MACHINE LEARNING/Machine learning/FINAL PROJECT MACHINE LEARNING/data/pml-training.csv"
+testFile <- "/Users/davidromerotorres/Dropbox (Personal)/CIENCIA DE DATOS/MACHINE LEARNING/Machine learning/FINAL PROJECT MACHINE LEARNING/data/pml-testing.csv"
+
+if(!file.exists("./data")){
+        dir.create("./data")
+}
+
+if(!file.exists(trainFile)){
+        download.file(trainUrl, destfile = trainFile, method = "curl")
+}
+
+if(!file.exists(testFile)){
+        download.file(testUrl, destfile = testFile, method = "curl")
+}
+```
+## Read the Data
+
+After downloading the data from the data source, we can read the two csv files into two data frames.
+
+```{r, cache=TRUE}
+trainRaw <- read.csv("/Users/davidromerotorres/Dropbox (Personal)/CIENCIA DE DATOS/MACHINE LEARNING/Machine learning/FINAL PROJECT MACHINE LEARNING/data/pml-training.csv")
+testRaw <- read.csv("/Users/davidromerotorres/Dropbox (Personal)/CIENCIA DE DATOS/MACHINE LEARNING/Machine learning/FINAL PROJECT MACHINE LEARNING/data/pml-testing.csv")
+dim(trainRaw)
+dim(testRaw)
+```
+
+## Clean the data
+
+We will clean the data and get rid of observations with missing values as well as some meaningless variables.
+
+```{r, cache=TRUE}
+sum(complete.cases(trainRaw))
+```
+
+First, we remove columns that contain NA missing values.
+
+```{r, cache=TRUE}
+trainRaw <- trainRaw[, colSums(is.na(trainRaw)) == 0]
+testRaw <- testRaw[, colSums(is.na(testRaw)) == 0]
+```
+
+We rid of some columns that do not contribute much to the accelerometer measurements.
+
+```{r, cache=TRUE}
+classe <- trainRaw$classe
+trainRemove <- grepl("^X|timesamp|window", names(trainRaw))
+trainRaw <- trainRaw[, !trainRemove]
+trainCleaned <- trainRaw[, sapply(trainRaw, is.numeric)]
+trainCleaned$classe <- classe
+testRemove <- grepl("^X|timesamp|window", names(testRaw))
+testRaw <- testRaw[, !testRemove]
+testCleaned <- testRaw[, sapply(testRaw, is.numeric)]
+```
+
+## Slice the data
+
+Then we can split the cleaned training set into a puer trainin data set (70%) an a validation data set (30%). We will use the validation data set to conducto cross validation in future steps.
+
+```{r, cache=TRUE}
+set.seed(2497)
+inTrain <- createDataPartition(trainCleaned$classe, p=0.70, list = FALSE)
+trainData <- trainCleaned[inTrain, ]
+testData <- trainCleaned[- inTrain, ]
+```
+
+# Data Modeling
+
+We fit a predictive model for activity recognition using **Random Forest** algorithm because it automatically selects important variables and is robust to correlated covariates and outliers in general. We will use ** 5-fold cross validation** when applying the algorithm
+
+```{r, cache=TRUE}
+controlRf <- trainControl(method = "cv", 5)
+model1Rf <- train(classe ~ ., data = trainData, method="rf", trControl=controlRf, ntree=250)
+model1Rf
+```
+
+Then, we estimate the performance of the model on the validation data set.
+
+```{r, cache=TRUE}
+predictRf <- predict(model1Rf, testData)
+confusionMatrix(predictRf, factor(testData$classe))
+```
+
+```{r, cache=TRUE}
+accuracy <- postResample(predictRf, factor(testData$classe))
+accuracy
+oose <- 1 - as.numeric(confusionMatrix(predictRf, factor(testData$classe))$overall[1])
+oose
+```
+
+The estimated accuracy of the model is 99.78%.
+
+## Predicting for Test Data Set
+
+Apply the model to the original testing data set downloaded from the data source. We remove the `problem_id`column first.
+
+```{r, cache=TRUE}
+result <- predict(model1Rf, testCleaned[, -length(names(testCleaned))])
+result
+```
+
+## Appendix: Figures
+
+1. Correlation Matrix visulization
+```{r, cache=TRUE}
+corrPlot <- cor(trainData[, -length(names(trainData))])
+corrplot(corrPlot, method = "color")
+```
+
+2. Decision Tree Visualization
+```{r, cache=TRUE}
+treeModel <- rpart(classe ~., data = trainData, method = "class")
+prp(treeModel)
+```
